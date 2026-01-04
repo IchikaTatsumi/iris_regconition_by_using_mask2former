@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from typing import Dict, Any
 from pathlib import Path
 
-from .trainer import IrisSegmentationTrainer
+from .mask2former_trainer import IrisSegmentationTrainer
 from data.dataset import UbirisDataset
 
 

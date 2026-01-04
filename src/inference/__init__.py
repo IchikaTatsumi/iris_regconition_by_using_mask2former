@@ -2,7 +2,7 @@
 Inference module for iris segmentation using trained SegFormer models
 """
 
-from .inference import (
+from .mask2former_inference import (
     IrisSegmentationInference,
     load_inference_model,
     quick_inference

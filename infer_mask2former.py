@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Command line interface for iris segmentation inference
+Command line interface for Mask2Former iris segmentation inference
 """
 
 import sys
@@ -11,21 +11,27 @@ from pathlib import Path
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-# ✅ FIX: Import from src.inference and src.utils
-from src.inference.inference import IrisSegmentationInference, quick_inference
+from src.inference.mask2former_inference import Mask2FormerInference, quick_mask2former_inference
 from src.utils.visualization import visualize_prediction
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Iris Segmentation Inference',
+        description='Mask2Former Iris Segmentation Inference',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python infer.py --image path/to/image.jpg --output results/
-  python infer.py --image path/to/image.jpg --checkpoint custom_model.pt
-  python infer.py --batch dataset/test_images/ --output batch_results/
-  python infer.py --image path/to/image.jpg --show
+  # Single image inference
+  python infer_mask2former.py --image path/to/image.jpg --output results/
+  
+  # Batch inference
+  python infer_mask2former.py --batch dataset/test_images/ --output batch_results/
+  
+  # Custom visualization
+  python infer_mask2former.py --image path/to/image.jpg --iris-color "0,255,0" --show
+  
+  # Quick inference
+  python infer_mask2former.py --image path/to/image.jpg --checkpoint custom_model.pt
         """
     )
     
@@ -35,13 +41,13 @@ Examples:
     
     # Model options
     parser.add_argument('--checkpoint', type=str, 
-                       default='outputs/segformer_iris_a100/checkpoints/best.pt',
+                       default='outputs/mask2former_iris/checkpoints/best.pt',
                        help='Path to model checkpoint')
     parser.add_argument('--device', type=str, default=None,
                        help='Device to use (cuda/cpu)')
     
     # Output options
-    parser.add_argument('--output', type=str, default='inference_results',
+    parser.add_argument('--output', type=str, default='mask2former_inference_results',
                        help='Output directory or file path')
     parser.add_argument('--show', action='store_true', 
                        help='Display results using matplotlib')
@@ -108,11 +114,11 @@ def single_image_inference(args):
         return
     
     print(f"🔍 Processing image: {args.image}")
-    print(f"📋 Using checkpoint: {args.checkpoint}")
+    print(f"📋 Using Mask2Former checkpoint: {args.checkpoint}")
     
     # Load model
-    print("⏳ Loading model...")
-    model = IrisSegmentationInference(
+    print("⏳ Loading Mask2Former model...")
+    model = Mask2FormerInference(
         checkpoint_path=args.checkpoint,
         device=args.device
     )
@@ -195,11 +201,11 @@ def batch_inference(args):
         return
     
     print(f"🔍 Processing {len(image_files)} images from: {args.batch}")
-    print(f"📋 Using checkpoint: {args.checkpoint}")
+    print(f"📋 Using Mask2Former checkpoint: {args.checkpoint}")
     
     # Load model
-    print("⏳ Loading model...")
-    model = IrisSegmentationInference(
+    print("⏳ Loading Mask2Former model...")
+    model = Mask2FormerInference(
         checkpoint_path=args.checkpoint,
         device=args.device
     )
@@ -273,7 +279,7 @@ def batch_inference(args):
     # Save summary report
     summary_path = output_dir / 'batch_summary.txt'
     with open(summary_path, 'w') as f:
-        f.write("Batch Inference Summary\n")
+        f.write("Mask2Former Batch Inference Summary\n")
         f.write("=" * 50 + "\n")
         f.write(f"Total images processed: {len(results_summary)}\n")
         f.write(f"Model checkpoint: {args.checkpoint}\n")

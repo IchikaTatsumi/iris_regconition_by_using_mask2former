@@ -2,7 +2,7 @@
 Model components for iris segmentation
 """
 
-from .segformer import EnhancedSegFormer, DeepSupervisionSegFormer, create_model
+from .mask2former import EnhancedSegFormer, DeepSupervisionSegFormer, create_model
 from .heads import BoundaryRefinementHead
 
 __all__ = [

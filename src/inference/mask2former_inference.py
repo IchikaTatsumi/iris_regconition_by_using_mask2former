@@ -1,5 +1,5 @@
 """
-Inference module for trained SegFormer iris segmentation model
+Inference module for trained Mask2Former iris segmentation model
 """
 
 import torch
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Union, Tuple
 import cv2
 
-from model.models import load_pretrained_iris_model, create_model
+from models import create_model
 from data.transforms import get_inference_transform
 from utils.visualization import (
     visualize_prediction, 
@@ -20,9 +20,9 @@ from utils.visualization import (
 )
 
 
-class IrisSegmentationInference:
+class Mask2FormerInference:
     """
-    Inference class for iris segmentation using trained SegFormer model
+    Inference class for iris segmentation using trained Mask2Former model
     """
     
     def __init__(
@@ -51,7 +51,8 @@ class IrisSegmentationInference:
         # Default model configuration
         if model_config is None:
             model_config = {
-                'model_name': 'nvidia/segformer-b1-finetuned-ade-512-512',
+                'architecture': 'mask2former',
+                'model_name': 'facebook/mask2former-swin-small-coco-panoptic',
                 'model_type': 'enhanced',
                 'num_labels': 2,
                 'add_boundary_head': True
@@ -66,7 +67,7 @@ class IrisSegmentationInference:
         # Get transforms
         self.transform = get_inference_transform()
         
-        print(f"✅ Inference model loaded from {checkpoint_path}")
+        print(f"✅ Mask2Former inference model loaded from {checkpoint_path}")
         print(f"📱 Device: {self.device}")
     
     def _load_model(self) -> torch.nn.Module:
@@ -111,7 +112,6 @@ class IrisSegmentationInference:
         if isinstance(image, (str, Path)):
             image = Image.open(image).convert('RGB')
         elif isinstance(image, np.ndarray):
-            # Convert BGR to RGB if OpenCV image
             if len(image.shape) == 3 and image.shape[2] == 3:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = Image.fromarray(image)
@@ -281,7 +281,7 @@ class IrisSegmentationInference:
         Args:
             results: Prediction results from predict()
             output_path: Output directory or file path
-            original_image: Original image for overlay (if not provided, overlay won't be saved)
+            original_image: Original image for overlay
             save_overlay: Whether to save overlay visualization
             save_comparison: Whether to save comparison visualization
             save_components: Whether to save individual components
@@ -290,11 +290,9 @@ class IrisSegmentationInference:
         output_path = Path(output_path)
         
         if output_path.is_dir():
-            # Save to directory with default names
             output_dir = output_path
             base_name = "prediction"
         else:
-            # Use provided filename
             output_dir = output_path.parent
             base_name = output_path.stem
         
@@ -351,28 +349,28 @@ class IrisSegmentationInference:
         return create_overlay_visualization(image, results, **overlay_kwargs)
 
 
-def load_inference_model(checkpoint_path: str, **kwargs) -> IrisSegmentationInference:
+def load_mask2former_inference(checkpoint_path: str, **kwargs) -> Mask2FormerInference:
     """
-    Convenience function to load inference model
+    Convenience function to load Mask2Former inference model
     
     Args:
         checkpoint_path: Path to model checkpoint
-        **kwargs: Additional arguments for IrisSegmentationInference
+        **kwargs: Additional arguments for Mask2FormerInference
     
     Returns:
         Loaded inference model
     """
-    return IrisSegmentationInference(checkpoint_path, **kwargs)
+    return Mask2FormerInference(checkpoint_path, **kwargs)
 
 
-def quick_inference(
+def quick_mask2former_inference(
     image_path: str,
     checkpoint_path: str,
     output_path: Optional[str] = None,
     show_result: bool = False
 ) -> Dict[str, Any]:
     """
-    Quick inference function for single image
+    Quick inference function for single image using Mask2Former
     
     Args:
         image_path: Path to input image
@@ -384,50 +382,9 @@ def quick_inference(
         Prediction results
     """
     # Load model
-    model = load_inference_model(checkpoint_path)
+    model = load_mask2former_inference(checkpoint_path)
     
     # Predict
     results = model.predict(image_path)
     
-    # Save results if output path provided
-    if output_path:
-        model.save_prediction(results, output_path)
-    
-    # Show results if requested
-    if show_result:
-        try:
-            import matplotlib.pyplot as plt
-            visualize_prediction(image_path, results)
-            plt.show()
-        except ImportError:
-            print("⚠️  Matplotlib not available for visualization")
-    
-    return results
-
-
-if __name__ == "__main__":
-    # Example usage
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Iris segmentation inference')
-    parser.add_argument('--image', type=str, required=True, help='Input image path')
-    parser.add_argument('--checkpoint', type=str, required=True, help='Model checkpoint path')
-    parser.add_argument('--output', type=str, help='Output directory')
-    parser.add_argument('--show', action='store_true', help='Show results')
-    parser.add_argument('--device', type=str, default=None, help='Device to use')
-    
-    args = parser.parse_args()
-    
-    # Run inference
-    results = quick_inference(
-        image_path=args.image,
-        checkpoint_path=args.checkpoint,
-        output_path=args.output,
-        show_result=args.show
-    )
-    
-    print("🎯 Inference completed!")
-    print(f"📊 Iris coverage: {np.mean(results['segmentation']['mask']) * 100:.1f}%")
-    if 'boundary' in results:
-        boundary_density = np.mean(results['boundary']['boundary_mask']) * 100
-        print(f"🔲 Boundary density: {boundary_density:.1f}%")
+    # Save resul
