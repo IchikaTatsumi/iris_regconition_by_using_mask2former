@@ -1,0 +1,194 @@
+{
+  "experiment_name": "mask2former_iris_ubirisv2",
+  "description": "Mask2Former with ResNet-50 for UBIRIS V2 iris segmentation",
+  
+  "model": {
+    "type": "mask2former",
+    "num_labels": 2,
+    "num_queries": 50,
+    "hidden_dim": 256,
+    "add_boundary_head": true,
+    "freeze_backbone": true,
+    "freeze_epochs": 10,
+    "use_checkpoint": false
+  },
+  
+  "data": {
+    "dataset_dir": "dataset",
+    "images_dir": "dataset/images",
+    "masks_dir": "dataset/masks",
+    "image_size": 512,
+    "train_val_split": 0.85,
+    "subject_aware_split": true,
+    "preserve_aspect_ratio": true,
+    "num_workers": 4,
+    "pin_memory": true
+  },
+  
+  "training": {
+    "epochs": 160,
+    "batch_size": 4,
+    "accumulation_steps": 2,
+    "learning_rate": 5e-5,
+    "weight_decay": 0.01,
+    "warmup_epochs": 5,
+    "min_lr": 1e-7,
+    
+    "optimizer": {
+      "type": "adamw",
+      "betas": [0.9, 0.999],
+      "eps": 1e-8
+    },
+    
+    "scheduler": {
+      "type": "cosine",
+      "warmup_steps": 500,
+      "min_lr_ratio": 0.01
+    },
+    
+    "loss": {
+      "ce_weight": 0.5,
+      "dice_weight": 0.5,
+      "boundary_weight": 0.25,
+      "mask2former_weight": 1.0,
+      "class_weights": [1.0, 15.0]
+    },
+    
+    "mixed_precision": {
+      "enabled": true,
+      "opt_level": "O1"
+    },
+    
+    "early_stopping": {
+      "enabled": true,
+      "patience": 20,
+      "min_delta": 0.001,
+      "metric": "mean_iou",
+      "mode": "max"
+    },
+    
+    "gradient_clipping": {
+      "enabled": true,
+      "max_norm": 1.0
+    }
+  },
+  
+  "augmentation": {
+    "horizontal_flip": 0.5,
+    "vertical_flip": 0.0,
+    "rotation_limit": 10,
+    "scale_limit": 0.1,
+    "brightness_contrast": {
+      "brightness_limit": 0.25,
+      "contrast_limit": 0.25,
+      "p": 0.4
+    },
+    "hue_saturation": {
+      "hue_shift_limit": 10,
+      "sat_shift_limit": 20,
+      "val_shift_limit": 20,
+      "p": 0.3
+    },
+    "clahe": {
+      "clip_limit": 2.0,
+      "tile_grid_size": [8, 8],
+      "p": 0.2
+    },
+    "blur": {
+      "blur_limit": 3,
+      "p": 0.2
+    },
+    "noise": {
+      "var_limit": 20.0,
+      "p": 0.1
+    }
+  },
+  
+  "evaluation": {
+    "metrics": [
+      "pixel_accuracy",
+      "mean_iou",
+      "mean_dice",
+      "class_iou",
+      "class_dice",
+      "precision",
+      "recall",
+      "f1_score",
+      "boundary_f1"
+    ],
+    "evaluate_every": 1,
+    "save_predictions": true,
+    "save_best_model": true,
+    "save_last_model": true
+  },
+  
+  "checkpointing": {
+    "save_dir": "outputs/mask2former_iris",
+    "save_frequency": 5,
+    "keep_best_n": 3,
+    "keep_last_n": 2,
+    "monitor_metric": "mean_iou",
+    "monitor_mode": "max"
+  },
+  
+  "logging": {
+    "use_wandb": true,
+    "wandb_project": "iris-segmentation-mask2former",
+    "wandb_entity": null,
+    "log_frequency": 50,
+    "log_images_frequency": 500,
+    "log_gradients": false,
+    "save_predictions_samples": 10
+  },
+  
+  "visualization": {
+    "enabled": true,
+    "save_frequency": 10,
+    "num_samples": 8,
+    "save_dir": "outputs/mask2former_iris/visualizations"
+  },
+  
+  "inference": {
+    "checkpoint_path": "outputs/mask2former_iris/checkpoints/best.pt",
+    "batch_size": 8,
+    "device": "cuda",
+    "use_amp": true,
+    "confidence_threshold": 0.5
+  },
+  
+  "hardware": {
+    "device": "cuda",
+    "gpu_ids": [0],
+    "distributed": false,
+    "world_size": 1,
+    "find_unused_parameters": false
+  },
+  
+  "reproducibility": {
+    "seed": 42,
+    "deterministic": false,
+    "benchmark": true
+  },
+  
+  "targets": {
+    "mean_iou": 0.90,
+    "mean_dice": 0.93,
+    "iris_iou": 0.90,
+    "boundary_f1": 0.80,
+    "inference_fps": 30
+  },
+  
+  "notes": {
+    "description": "Configuration optimized for RTX 3050 (4GB VRAM)",
+    "dataset": "UBIRIS V2 - 2250 images",
+    "model_info": "Mask2Former with ResNet-50 backbone",
+    "memory_usage": "~3.5GB VRAM with batch_size=4, mixed precision",
+    "expected_training_time": "~4-6 hours on RTX 3050",
+    "recommendations": [
+      "Use batch_size=2 if OOM errors occur",
+      "Disable boundary_head if memory is tight",
+      "Reduce num_queries to 30 for faster training",
+      "Use gradient_checkpointing for larger batches"
+    ]
+  }
+}

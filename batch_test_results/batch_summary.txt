@@ -1,0 +1,27 @@
+Batch Inference Summary
+==================================================
+Total images processed: 3
+Model checkpoint: outputs/segformer_iris_a100/checkpoints/best.pt
+Output directory: batch_test_results
+
+Individual Results:
+--------------------------------------------------
+Image: C100_S1_I11.png
+  Iris Coverage: 11.1%
+  Confidence: 0.994
+  Boundary Density: 4.7%
+
+Image: C100_S1_I12.png
+  Iris Coverage: 12.0%
+  Confidence: 0.993
+  Boundary Density: 5.2%
+
+Image: C100_S1_I10.png
+  Iris Coverage: 11.5%
+  Confidence: 0.994
+  Boundary Density: 4.5%
+
+Overall Statistics:
+--------------------------------------------------
+Average iris coverage: 11.5%
+Average confidence: 0.994

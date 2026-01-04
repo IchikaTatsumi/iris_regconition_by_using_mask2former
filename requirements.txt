@@ -1,0 +1,53 @@
+# ================================================
+# IRIS SEGMENTATION - REQUIREMENTS
+# File location: requirements.txt
+# Updated: 2025 - Fixed for Mask2Former
+# ================================================
+
+# Core ML packages
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Transformers for Mask2Former
+transformers>=4.36.0
+accelerate>=0.24.0
+
+# Vision backbone models
+timm>=0.9.16                    # For ResNet-50 and other backbones
+
+# Data processing and augmentation
+albumentations>=1.3.0
+opencv-python>=4.8.0            # Or opencv-python-headless for servers
+Pillow>=10.0.0
+numpy>=1.24.0,<2.0.0            # IMPORTANT: numpy 2.0 has compatibility issues
+
+# Scientific computing
+scipy>=1.10.0                   # For spatial operations
+einops>=0.7.0                   # Efficient tensor operations
+
+# Visualization and logging
+matplotlib>=3.7.0
+wandb>=0.15.0
+tensorboard>=2.14.0
+
+# Metrics and evaluation
+scikit-learn>=1.3.0
+scikit-image>=0.21.0
+
+# Utilities
+tqdm>=4.66.0
+pyyaml>=6.0
+
+# Performance optimization
+ninja>=1.11.0                   # Faster C++ compilation (optional)
+
+# Video processing (for demo)
+imageio>=2.31.0                 # Video I/O
+imageio-ffmpeg>=0.4.9           # FFmpeg wrapper
+
+# ================================================
+# IMPORTANT NOTES:
+# 1. Mask2Former in transformers library requires specific dependencies
+# 2. Use Python 3.8-3.11 (Python 3.12+ may have compatibility issues)
+# 3. If CUDA error: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# ================================================
