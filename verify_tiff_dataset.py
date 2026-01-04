@@ -145,7 +145,7 @@ def verify_tiff_dataset(dataset_root='dataset'):
         print(f"\n🧪 Testing dataset loader...")
         
         sys.path.insert(0, 'src')
-        from data.dataset import UbirisDataset
+        from src.data.dataset import UbirisDataset
         
         print(f"   Creating dataset...")
         ds = UbirisDataset(dataset_root, split='train')

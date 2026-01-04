@@ -10,7 +10,7 @@ sys.path.append('src')
 import torch
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
-from data.dataset import UbirisDataset
+from src.data.dataset import UbirisDataset
 
 def calculate_class_weights(dataset_root='dataset', max_samples=500):
     """

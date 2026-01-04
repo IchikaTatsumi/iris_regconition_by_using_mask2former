@@ -246,7 +246,7 @@ def test_dataset_loader(dataset_root='dataset'):
     
     try:
         sys.path.insert(0, 'src')
-        from data.dataset import UbirisDataset
+        from src.data.dataset import UbirisDataset
         
         print(f"Creating dataset...")
         ds = UbirisDataset(dataset_root, split='train', use_subject_split=True)
@@ -299,7 +299,7 @@ def test_model_creation():
     
     try:
         sys.path.insert(0, 'src')
-        from models.mask2former import create_model
+        from src.models.mask2former import create_model
         
         print(f"Creating Mask2Former model...")
         model = create_model(
