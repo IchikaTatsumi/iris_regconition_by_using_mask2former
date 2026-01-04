@@ -7,211 +7,194 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import sys
 import os
+import torch.nn.functional as F
 
-# Đảm bảo Python nhìn thấy thư mục src
+# --- SETUP ĐƯỜNG DẪN ---
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-# Import model class (Sửa lại đường dẫn import nếu cấu trúc thư mục của bạn khác)
 try:
     from src.models.mask2former import EnhancedMask2Former
 except ImportError:
-    print("❌ LỖI: Không tìm thấy module 'src'. Hãy đảm bảo file này nằm ngang hàng với thư mục 'src'.")
+    print("❌ LỖI: Không tìm thấy module 'src'.")
     sys.exit(1)
 
 class IrisSegmentor:
     def __init__(self, config_path, checkpoint_path):
-        # Kiểm tra CUDA
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda')
-            self.device_name = torch.cuda.get_device_name(0)
-            print(f"🚀 Hardware: {self.device_name} (Ready for RTX 3050 Optimization)")
-        else:
-            self.device = torch.device('cpu')
-            print("⚠️ CẢNH BÁO: Không tìm thấy GPU. Tốc độ sẽ rất chậm!")
+        # Thiết bị
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'
+        print(f"🚀 Phan cung: {device_name}")
 
         # 1. Load Config
-        print(f"📖 Loading config: {config_path}")
         with open(config_path, 'r') as f:
             self.config = json.load(f)
+        
+        # Xử lý config
+        model_cfg = self.config.get('model', self.config.get('model_config', {}))
+        for k in ['architecture', 'model_type', 'use_checkpoint']:
+            if k in model_cfg: del model_cfg[k]
 
-        # 2. Chuẩn bị config cho model (Loại bỏ các key thừa gây lỗi)
-        model_cfg = self.config['model_config']
-        
-        # Xóa key 'use_checkpoint' nếu tồn tại (nguyên nhân gây lỗi trước đó)
-        keys_to_remove = ['use_checkpoint']
-        for key in keys_to_remove:
-            if key in model_cfg:
-                print(f"🔧 Removing incompatible key: {key}")
-                del model_cfg[key]
-        
-        # 3. Khởi tạo Model
-        print("🏗️ Initializing Model...")
-        self.model = EnhancedMask2Former(**model_cfg)
-        
-        # 4. Load Weights (Trọng số)
-        print(f"⚖️ Loading checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        
-        if 'state_dict' in checkpoint:
-            self.model.load_state_dict(checkpoint['state_dict'])
-        else:
-            self.model.load_state_dict(checkpoint)
-            
-        self.model.to(self.device)
-        self.model.eval() # Bắt buộc: Chế độ Evaluation
+        # 2. Init Model
+        print("🏗️ Dang khoi tao Model...")
+        try:
+            self.model = EnhancedMask2Former(**model_cfg)
+        except TypeError:
+            model_cfg = {k:v for k,v in model_cfg.items() if k in ['num_labels', 'model_name', 'num_queries']}
+            self.model = EnhancedMask2Former(**model_cfg)
 
-        # 5. Cấu hình Transform (TỐI ƯU HÓA CHO RTX 3050)
-        # 384x384 là điểm cân bằng tốt nhất giữa tốc độ và độ chính xác cho GPU 4GB
-        self.img_size = 384 
-        print(f"⚙️ Input Resolution set to: {self.img_size}x{self.img_size}")
+        # 3. Load Weights
+        print(f"⚖️ Dang tai trong so (Weights)...")
+        if not os.path.exists(checkpoint_path):
+            print(f"❌ File khong ton tai: {checkpoint_path}")
+            sys.exit(1)
 
+        try:
+            ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+            state_dict = ckpt.get('model_state_dict', ckpt.get('state_dict', ckpt.get('model', ckpt)))
+            self.model.load_state_dict(state_dict)
+            print("✅ Da tai Model thanh cong!")
+        except Exception as e:
+            print(f"❌ Loi load weights: {e}")
+            sys.exit(1)
+
+        self.model.to(self.device).eval()
+
+        # 4. Transform - QUAN TRỌNG: 320x320 để tối ưu tốc độ
+        self.img_size = 320
         self.transform = A.Compose([
-            A.Resize(height=self.img_size, width=self.img_size),
+            A.Resize(self.img_size, self.img_size),
             A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2()
         ])
-        
-        # Bảng màu: Class 0 (Trong suốt), Class 1 (Xanh lá - Iris)
-        self.colors = np.array([
-            [0, 0, 0],       # Background
-            [0, 255, 0]      # Iris
-        ], dtype=np.uint8)
 
-    def predict(self, frame):
+    def predict_raw_probs(self, frame):
         """
-        Dự đoán Mask từ frame ảnh (Webcam)
+        Trả về bản đồ xác suất kích thước nhỏ (320x320) để xử lý cho nhanh
         """
-        original_h, original_w = frame.shape[:2]
+        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        x = self.transform(image=img_rgb)['image'].unsqueeze(0).to(self.device)
 
-        # 1. Preprocess: Resize & Normalize
-        # Chuyển BGR (OpenCV) -> RGB (Model)
-        image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        augmented = self.transform(image=image_rgb)
-        x_tensor = augmented['image'].unsqueeze(0).to(self.device) # Shape: [1, 3, 384, 384]
-
-        # 2. Inference (QUAN TRỌNG: Dùng FP16 để tăng tốc)
         with torch.no_grad():
-            # Tự động dùng Mixed Precision (FP16) cho RTX 3050
-            with torch.amp.autocast('cuda'): 
-                outputs = self.model(x_tensor)
+            with torch.amp.autocast('cuda'):
+                out = self.model(x)
+                logits = out.get('pred_masks', out.get('logits', out))
                 
-                # Xử lý output (tùy vào output của model là dict hay tensor)
-                if isinstance(outputs, dict):
-                     logits = outputs['pred_masks'] # Key phổ biến của Mask2Former
-                else:
-                     logits = outputs
+                # Softmax -> Xác suất
+                probs = F.softmax(logits, dim=1)
+                
+                # Lấy kênh Iris (Class 1)
+                iris_prob = probs[0, 1, :, :] # [320, 320]
+                
+        # Trả về numpy array kích thước 320x320 (Chưa resize vội)
+        return iris_prob.cpu().float().numpy()
 
-                # Lấy class có xác suất cao nhất ngay trên GPU
-                # [1, 2, H, W] -> [H, W]
-                pred_mask = torch.argmax(logits, dim=1).squeeze(0)
+def nothing(x):
+    pass
 
-        # 3. Post-process
-        # Chuyển về CPU -> Numpy
-        pred_mask_np = pred_mask.cpu().numpy().astype(np.uint8)
-        
-        # Resize mask về kích thước gốc của Webcam (dùng Nearest để giữ cạnh sắc nét)
-        pred_mask_resized = cv2.resize(pred_mask_np, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
-        
-        return pred_mask_resized
-
-    def draw_overlay(self, frame, mask, alpha=0.4):
-        """
-        Vẽ mask chồng lên ảnh gốc
-        """
-        # Tạo ảnh màu từ mask index
-        # mask có giá trị 0 hoặc 1. self.colors[mask] sẽ map ra màu tương ứng
-        color_mask = self.colors[mask]
-        
-        # Chỉ blend màu tại vị trí mống mắt (mask == 1)
-        iris_pixels = mask == 1
-        
-        overlay = frame.copy()
-        # Công thức blend: img * (1-alpha) + mask * alpha
-        overlay[iris_pixels] = cv2.addWeighted(
-            frame[iris_pixels], 1-alpha, 
-            color_mask[iris_pixels], alpha, 
-            0
-        )
-        return overlay
-
-# --- CHƯƠNG TRÌNH CHÍNH ---
 def main():
-    # --- CẤU HÌNH ĐƯỜNG DẪN (Sửa lại nếu tên file khác) ---
-    CONFIG_PATH = 'configs/mask2former_config_kaggle.json'
-    CHECKPOINT_PATH = 'checkpoints/best_checkpoint.pth' # Hoặc 'training_results/...'
+    CONFIG = 'configs/mask2former_config_kaggle.json'
+    CKPT = 'checkpoints/best_checkpoint.pth'
 
-    # Kiểm tra file tồn tại
-    if not os.path.exists(CONFIG_PATH) or not os.path.exists(CHECKPOINT_PATH):
-        print("❌ LỖI: Không tìm thấy file Config hoặc Checkpoint!")
-        print(f"   - Config: {CONFIG_PATH}")
-        print(f"   - Checkpoint: {CHECKPOINT_PATH}")
-        return
-
-    # 1. Khởi tạo Model
-    try:
-        segmentor = IrisSegmentor(CONFIG_PATH, CHECKPOINT_PATH)
-        print("✅ Model loaded successfully!")
-    except Exception as e:
-        print(f"❌ Error loading model: {e}")
-        import traceback
-        traceback.print_exc()
-        return
-
-    # 2. Mở Webcam
-    print("🎥 Opening Webcam...")
-    cap = cv2.VideoCapture(0)
+    segmentor = IrisSegmentor(CONFIG, CKPT)
     
-    # Thiết lập độ phân giải Webcam (640x480 là chuẩn nhẹ nhất để hiển thị)
+    cap = cv2.VideoCapture(0)
+    # Thiết lập độ phân giải Webcam
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    if not cap.isOpened():
-        print("❌ Không thể mở Webcam.")
-        return
-
-    print("\n" + "="*40)
-    print("   NHẤN 'Q' ĐỂ THOÁT CHƯƠNG TRÌNH   ")
-    print("="*40 + "\n")
+    # --- TẠO CỬA SỔ ĐIỀU KHIỂN TIẾNG VIỆT ---
+    # Lưu ý: OpenCV đôi khi hiển thị tiếng Việt có dấu bị lỗi font trên Windows Title
+    # nên mình dùng Tiếng Việt không dấu hoặc ASCII chuẩn để an toàn nhất.
+    window_name = "Dieu Chinh Mong Mat (Iris Tuner)" 
+    cv2.namedWindow(window_name)
+    
+    # 1. Thanh trượt độ nhạy: Mặc định 35%
+    cv2.createTrackbar("Do Nhay %", window_name, 35, 100, nothing)
+    # 2. Thanh trượt làm mịn: Mặc định 5
+    cv2.createTrackbar("Lam Min", window_name, 5, 20, nothing)
+    
+    print("\n🟢 DANG CHAY... Chinh thanh truot de toi uu ket qua!")
+    print("👉 Bam 'q' de thoat chuong trinh.")
 
     prev_time = 0
-    
     while True:
         ret, frame = cap.read()
-        if not ret:
-            print("Cannot read frame.")
-            break
-
-        # Flip gương để nhìn tự nhiên hơn
+        if not ret: break
+        
+        # Lật ảnh gương cho tự nhiên
         frame = cv2.flip(frame, 1)
+        original_h, original_w = frame.shape[:2]
 
-        # Đo FPS
-        current_time = time.time()
+        # 1. Lấy xác suất thô (Kích thước nhỏ 320x320) -> TỐI ƯU HÓA
+        prob_map_small = segmentor.predict_raw_probs(frame)
+
+        # 2. Lấy giá trị từ thanh trượt
+        thresh_val = cv2.getTrackbarPos("Do Nhay %", window_name) / 100.0
+        kernel_size = cv2.getTrackbarPos("Lam Min", window_name)
+        if kernel_size < 1: kernel_size = 1
+
+        # 3. Xử lý trên ảnh nhỏ (Nhanh hơn 4 lần so với xử lý ảnh to)
+        # Tạo mask thô
+        mask_small = (prob_map_small > thresh_val).astype(np.uint8)
+
+        # Lọc nhiễu (Morphology)
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        mask_small = cv2.morphologyEx(mask_small, cv2.MORPH_OPEN, kernel)  # Xóa nhiễu hạt
+        mask_small = cv2.morphologyEx(mask_small, cv2.MORPH_CLOSE, kernel) # Lấp lỗ hổng
+
+        # 4. Chỉ giữ vùng lớn nhất (Loại bỏ rác)
+        cnts, _ = cv2.findContours(mask_small, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        clean_mask_small = np.zeros_like(mask_small)
         
-        # --- CHẠY DỰ ĐOÁN ---
-        mask = segmentor.predict(frame)
+        has_iris = False
+        if cnts:
+            largest_cnt = max(cnts, key=cv2.contourArea)
+            # Chỉ vẽ nếu vùng đủ lớn (> 30 pixel ở độ phân giải thấp)
+            if cv2.contourArea(largest_cnt) > 30:
+                cv2.drawContours(clean_mask_small, [largest_cnt], -1, 1, -1)
+                has_iris = True
         
-        # --- VẼ KẾT QUẢ ---
-        result_frame = segmentor.draw_overlay(frame, mask)
+        # 5. Phóng to Mask lên kích thước Webcam (Resize 1 lần duy nhất ở đây)
+        # Dùng INTER_NEAREST (Nhanh nhất) hoặc INTER_LINEAR (Mượt hơn xíu)
+        final_mask = cv2.resize(clean_mask_small, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
 
-        # Tính toán và hiển thị FPS
-        fps = 1 / (current_time - prev_time) if prev_time > 0 else 0
-        prev_time = current_time
+        # 6. Vẽ lên ảnh gốc
+        result = frame.copy()
         
-        # Vẽ thông số lên màn hình
-        cv2.putText(result_frame, f"FPS: {int(fps)}", (20, 40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        cv2.putText(result_frame, f"Device: RTX 3050 (FP16)", (20, 80), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+        if has_iris:
+            # Tạo lớp phủ màu xanh
+            overlay = np.zeros_like(frame)
+            overlay[final_mask == 1] = (0, 255, 0) # Xanh lá
+            
+            # Blend vào ảnh gốc
+            result = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
+            
+            # Vẽ viền bao quanh (Tìm lại contour trên mask lớn để vẽ viền cho nét)
+            final_cnts, _ = cv2.findContours(final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if final_cnts:
+                largest_final_cnt = max(final_cnts, key=cv2.contourArea)
+                cv2.drawContours(result, [largest_final_cnt], -1, (0, 255, 255), 2) # Viền vàng
 
-        cv2.imshow('Real-time Iris Segmentation', result_frame)
+        # Tính và hiển thị FPS
+        curr_time = time.time()
+        fps = 1 / (curr_time - prev_time) if prev_time > 0 else 0
+        prev_time = curr_time
 
-        # Nhấn Q để thoát
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        # Hiển thị thông số tiếng Việt
+        cv2.putText(result, f"Toc do: {int(fps)} FPS", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        cv2.putText(result, f"Nguong: {int(thresh_val*100)}%", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+
+        cv2.imshow(window_name, result)
+        
+        # Hiển thị Heatmap ở cửa sổ nhỏ (Debug)
+        heatmap = (prob_map_small * 255).astype(np.uint8)
+        heatmap_color = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+        cv2.imshow("Ban Do Nhiet (Heatmap)", cv2.resize(heatmap_color, (320, 240)))
+
+        if cv2.waitKey(1) & 0xFF == ord('q'): break
 
     cap.release()
     cv2.destroyAllWindows()
-    print("👋 Chương trình kết thúc.")
 
 if __name__ == "__main__":
     main()

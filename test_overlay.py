@@ -1,24 +1,42 @@
 #!/usr/bin/env python3
 """
-Test script for overlay visualization functionality
+Test script for overlay visualization functionality (Fixed)
 """
 
 import sys
 import os
+import cv2
+import numpy as np
 from pathlib import Path
+from PIL import Image
 
-# Add src to Python path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+# Import class inference từ file infer_mask2former.py (đảm bảo file đó nằm cùng thư mục)
+try:
+    from infer_mask2former import Mask2FormerInference
+except ImportError:
+    print("❌ LỖI: Không tìm thấy file 'infer_mask2former.py'.")
+    print("👉 Hãy đảm bảo file test_overlay.py nằm cùng thư mục với infer_mask2former.py")
+    sys.exit(1)
 
-from inference import IrisSegmentationInference
-from utils.visualization import create_overlay_visualization, create_comparison_visualization
-
+def create_overlay_visualization(image_path, result, color=(0, 255, 0), alpha=0.5):
+    """Hàm vẽ overlay đơn giản để test"""
+    image = cv2.imread(str(image_path))
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    mask = result['mask']
+    
+    colored_mask = np.zeros_like(image)
+    colored_mask[mask == 1] = color
+    
+    overlay = cv2.addWeighted(image, 1-alpha, colored_mask, alpha, 0)
+    return overlay
 
 def test_overlay_visualization():
-    """Test overlay visualization with different settings"""
+    # Cấu hình đường dẫn (Sửa lại cho đúng file của bạn)
+    checkpoint_path = "checkpoints/best_checkpoint.pth"
+    config_path = "configs/mask2former_config_kaggle.json"
     
-    checkpoint_path = "outputs/segformer_iris_a100/checkpoints/best.pt"
-    sample_image = "dataset/images/C100_S1_I10.png"
+    # Tạo một ảnh mẫu giả lập nếu không có file thật (hoặc thay bằng đường dẫn ảnh thật)
+    sample_image = "test_eye.jpg" 
     
     if not os.path.exists(checkpoint_path):
         print(f"❌ Checkpoint not found: {checkpoint_path}")
@@ -26,16 +44,15 @@ def test_overlay_visualization():
     
     if not os.path.exists(sample_image):
         print(f"❌ Sample image not found: {sample_image}")
+        print("👉 Hãy copy một ảnh mắt vào và đổi tên thành 'eye_test.jpg'")
         return
     
     print("🎨 Testing overlay visualization functionality")
-    print(f"📋 Model: {checkpoint_path}")
-    print(f"📸 Image: {sample_image}")
     
     try:
         # Load model
         print("⏳ Loading model...")
-        model = IrisSegmentationInference(checkpoint_path)
+        model = Mask2FormerInference(checkpoint_path, config_path)
         
         # Run inference
         print("🚀 Running inference...")
@@ -47,102 +64,29 @@ def test_overlay_visualization():
         
         print("🎨 Creating overlay visualizations...")
         
-        # Test 1: Basic overlay with default settings
-        print("   1️⃣ Basic overlay (red iris, cyan boundary)")
-        overlay_basic = create_overlay_visualization(sample_image, results)
-        from PIL import Image
-        Image.fromarray(overlay_basic).save(output_dir / "overlay_basic.png")
+        # Test 1: Basic Green Overlay
+        print("   1️⃣ Green Overlay")
+        overlay1 = create_overlay_visualization(sample_image, results, color=(0, 255, 0))
+        Image.fromarray(overlay1).save(output_dir / "overlay_green.png")
         
-        # Test 2: Custom colors and transparency
-        print("   2️⃣ Custom overlay (green iris, yellow boundary)")
-        overlay_custom = create_overlay_visualization(
-            sample_image, 
-            results,
-            iris_color=(0, 255, 0),      # Green
-            boundary_color=(255, 255, 0), # Yellow
-            iris_alpha=0.6,
-            boundary_alpha=0.9,
-            boundary_thickness=3
-        )
-        Image.fromarray(overlay_custom).save(output_dir / "overlay_custom.png")
+        # Test 2: Red Overlay (Iris only style)
+        print("   2️⃣ Red Overlay")
+        overlay2 = create_overlay_visualization(sample_image, results, color=(255, 0, 0), alpha=0.3)
+        Image.fromarray(overlay2).save(output_dir / "overlay_red.png")
         
-        # Test 3: Iris only (no boundary)
-        print("   3️⃣ Iris only overlay (purple iris)")
-        overlay_iris_only = create_overlay_visualization(
-            sample_image, 
-            results,
-            iris_color=(128, 0, 128),     # Purple
-            show_boundary=False,
-            iris_alpha=0.5
-        )
-        Image.fromarray(overlay_iris_only).save(output_dir / "overlay_iris_only.png")
-        
-        # Test 4: Side-by-side comparison
-        print("   4️⃣ Comparison visualization")
-        create_comparison_visualization(
-            sample_image, 
-            results, 
-            output_dir / "comparison.png"
-        )
-        
-        # Test 5: Using inference class method
-        print("   5️⃣ Using inference class overlay method")
-        overlay_class = model.create_overlay(
-            sample_image,
-            results,
-            iris_color=(255, 0, 255),     # Magenta
-            boundary_color=(0, 255, 0),   # Green
-            iris_alpha=0.3,
-            boundary_alpha=0.7
-        )
-        Image.fromarray(overlay_class).save(output_dir / "overlay_class_method.png")
-        
-        # Test 6: Full save_prediction with overlays
-        print("   6️⃣ Full prediction save with overlays")
-        model.save_prediction(
-            results,
-            output_dir / "full_prediction",
-            original_image=sample_image,
-            save_overlay=True,
-            save_comparison=True,
-            save_components=True,
-            overlay_kwargs={
-                'iris_color': (0, 0, 255),    # Blue
-                'boundary_color': (255, 165, 0), # Orange
-                'iris_alpha': 0.45,
-                'boundary_alpha': 0.85
-            }
-        )
-        
+        # Test 3: Blue Overlay
+        print("   3️⃣ Blue Overlay")
+        overlay3 = create_overlay_visualization(sample_image, results, color=(0, 0, 255), alpha=0.6)
+        Image.fromarray(overlay3).save(output_dir / "overlay_blue.png")
+
         print(f"✅ All overlay tests completed!")
         print(f"📁 Results saved to: {output_dir}")
-        print(f"🔍 Check the following files:")
-        print(f"   - overlay_basic.png (default red/cyan)")
-        print(f"   - overlay_custom.png (green/yellow)")
-        print(f"   - overlay_iris_only.png (purple iris only)")
-        print(f"   - comparison.png (side-by-side comparison)")
-        print(f"   - overlay_class_method.png (using class method)")
-        print(f"   - full_prediction_*.png (complete prediction set)")
-        
-        # Print statistics
-        seg_mask = results['segmentation']['mask']
-        iris_coverage = (seg_mask == 1).sum() / seg_mask.size * 100
-        avg_confidence = results['segmentation']['confidence'].mean()
-        
-        print(f"\n📊 Image Statistics:")
-        print(f"   - Image size: {seg_mask.shape}")
-        print(f"   - Iris coverage: {iris_coverage:.1f}%")
-        print(f"   - Average confidence: {avg_confidence:.3f}")
-        
-        if 'boundary' in results:
-            boundary_density = results['boundary']['boundary_mask'].sum() / results['boundary']['boundary_mask'].size * 100
-            print(f"   - Boundary density: {boundary_density:.1f}%")
-        
+        print(f"📊 Confidence: {results['confidence']:.3f}")
+
     except Exception as e:
         print(f"❌ Error during overlay testing: {e}")
         import traceback
         traceback.print_exc()
-
 
 if __name__ == "__main__":
     test_overlay_visualization()

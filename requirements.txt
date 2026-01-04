@@ -1,12 +1,13 @@
-torch>=2.1.0
-torchvision>=0.16.0
-transformers>=4.36.0      # ✅ CRITICAL for Mask2Former
+# torch>=2.1.0          <-- cài thủ công 
+# torchvision>=0.16.0   <-- cài thủ công 
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+transformers>=4.36.0
 accelerate>=0.24.0
 timm>=0.9.16
 albumentations>=1.3.0
 opencv-python>=4.8.0
 Pillow>=10.0.0
-numpy>=1.24.0,<2.0.0     # ✅ IMPORTANT: numpy 2.0 has issues
+numpy>=1.24.0,<2.0.0
 scipy>=1.10.0
 einops>=0.7.0
 matplotlib>=3.7.0
