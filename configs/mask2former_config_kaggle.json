@@ -1,0 +1,246 @@
+{
+  "experiment_name": "mask2former_iris_kaggle",
+  "description": "Mask2Former for iris segmentation - Kaggle optimized",
+  "model": {
+    "architecture": "mask2former",
+    "model_name": "facebook/mask2former-swin-small-coco-panoptic",
+    "model_type": "enhanced",
+    "num_labels": 2,
+    "num_queries": 50,
+    "hidden_dim": 256,
+    "add_boundary_head": true,
+    "freeze_backbone": true,
+    "freeze_epochs": 5,
+    "use_checkpoint": false
+  },
+  "data": {
+    "dataset_dir": "/kaggle/input/your-dataset-name/dataset",
+    "dataset_root": "/kaggle/input/your-dataset-name/dataset",
+    "images_dir": "/kaggle/input/your-dataset-name/dataset/images",
+    "masks_dir": "/kaggle/input/your-dataset-name/dataset/masks",
+    "image_size": 512,
+    "train_val_split": 0.85,
+    "subject_aware_split": true,
+    "use_subject_split": true,
+    "preserve_aspect_ratio": true,
+    "preserve_aspect": true,
+    "num_workers": 2,
+    "pin_memory": true,
+    "batch_size": 8
+  },
+  "training": {
+    "num_epochs": 100,
+    "epochs": 100,
+    "batch_size": 8,
+    "accumulation_steps": 1,
+    "learning_rate": 5e-05,
+    "base_lr": 5e-05,
+    "weight_decay": 0.01,
+    "warmup_epochs": 3,
+    "min_lr": 1e-07,
+    "patience": 15,
+    "save_frequency": 20,
+    "eval_freq": 1,
+    "evaluate_every": 1,
+    "log_freq": 50,
+    "gradient_clip": 1.0,
+    "mixed_precision": true,
+    "steps_per_epoch": 1000,
+    "optimizer": {
+      "type": "adamw",
+      "base_lr": 5e-05,
+      "learning_rate": 5e-05,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "eps": 1e-08,
+      "weight_decay": 0.01
+    },
+    "scheduler": {
+      "type": "cosine",
+      "warmup_steps": 300,
+      "min_lr_ratio": 0.01,
+      "min_lr": 1e-07,
+      "power": 0.9
+    },
+    "early_stopping": {
+      "enabled": true,
+      "patience": 15,
+      "min_delta": 0.001,
+      "metric": "mean_iou",
+      "mode": "max"
+    },
+    "gradient_clipping": {
+      "enabled": true,
+      "max_norm": 1.0
+    }
+  },
+  "optimizer": {
+    "type": "adamw",
+    "base_lr": 5e-05,
+    "learning_rate": 5e-05,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "eps": 1e-08,
+    "weight_decay": 0.01
+  },
+  "scheduler": {
+    "type": "cosine",
+    "warmup_steps": 300,
+    "min_lr_ratio": 0.01,
+    "min_lr": 1e-07,
+    "power": 0.9
+  },
+  "loss": {
+    "loss_type": "combined",
+    "ce_weight": 0.5,
+    "dice_weight": 0.5,
+    "boundary_weight": 0.25,
+    "mask2former_weight": 1.0,
+    "aux_weight": 0.2,
+    "use_focal": false,
+    "focal_alpha": null,
+    "focal_gamma": 2.0,
+    "class_weights": [
+      1.0,
+      15.0
+    ]
+  },
+  "augmentation": {
+    "horizontal_flip": 0.5,
+    "vertical_flip": 0.0,
+    "rotation_limit": 10,
+    "scale_limit": 0.1,
+    "brightness_contrast": {
+      "brightness_limit": 0.25,
+      "contrast_limit": 0.25,
+      "p": 0.4
+    },
+    "hue_saturation": {
+      "hue_shift_limit": 10,
+      "sat_shift_limit": 20,
+      "val_shift_limit": 20,
+      "p": 0.3
+    },
+    "clahe": {
+      "clip_limit": 2.0,
+      "tile_grid_size": [
+        8,
+        8
+      ],
+      "p": 0.2
+    },
+    "blur": {
+      "blur_limit": 3,
+      "p": 0.2
+    },
+    "noise": {
+      "var_limit": 20.0,
+      "p": 0.1
+    }
+  },
+  "evaluation": {
+    "metrics": [
+      "pixel_accuracy",
+      "mean_iou",
+      "mean_dice",
+      "class_iou",
+      "class_dice",
+      "precision",
+      "recall",
+      "f1_score",
+      "boundary_f1"
+    ],
+    "evaluate_every": 1,
+    "save_predictions": true,
+    "save_best_model": true,
+    "save_last_model": true
+  },
+  "checkpointing": {
+    "save_dir": "/kaggle/working/outputs/mask2former_iris",
+    "save_frequency": 20,
+    "keep_best_n": 2,
+    "keep_last_n": 1,
+    "monitor_metric": "mean_iou",
+    "monitor_mode": "max"
+  },
+  "logging": {
+    "use_wandb": false,
+    "wandb_project": "iris-segmentation-mask2former",
+    "wandb_entity": null,
+    "log_frequency": 50,
+    "log_images_frequency": 500,
+    "log_gradients": false,
+    "save_predictions_samples": 5
+  },
+  "visualization": {
+    "enabled": true,
+    "save_frequency": 20,
+    "num_samples": 4,
+    "save_dir": "/kaggle/working/outputs/mask2former_iris/visualizations"
+  },
+  "inference": {
+    "checkpoint_path": "/kaggle/working/outputs/mask2former_iris/checkpoints/best.pt",
+    "batch_size": 8,
+    "device": "cuda",
+    "use_amp": true,
+    "confidence_threshold": 0.5
+  },
+  "hardware": {
+    "device": "cuda",
+    "gpu_ids": [
+      0
+    ],
+    "distributed": false,
+    "world_size": 1,
+    "find_unused_parameters": false
+  },
+  "reproducibility": {
+    "seed": 42,
+    "deterministic": false,
+    "benchmark": true
+  },
+  "num_classes": 2,
+  "class_names": [
+    "background/pupil",
+    "iris"
+  ],
+  "class_distribution": [
+    0.95,
+    0.05
+  ],
+  "project_name": "iris-segmentation-mask2former-kaggle",
+  "run_name": "mask2former-iris-kaggle",
+  "tags": [
+    "mask2former",
+    "iris",
+    "segmentation",
+    "kaggle"
+  ],
+  "output_dir": "/kaggle/working/outputs/mask2former_iris",
+  "targets": {
+    "mean_iou": 0.9,
+    "mean_dice": 0.93,
+    "iris_iou": 0.9,
+    "boundary_f1": 0.8,
+    "inference_fps": 30
+  },
+  "notes": {
+    "kaggle_optimized": true,
+    "gpu": "P100 or T4 (16GB)",
+    "time_limit": "12 hours",
+    "expected_training_time": "8-10 hours for 100 epochs",
+    "batch_size": 8,
+    "recommendations": [
+      "Upload dataset as Kaggle dataset",
+      "Update dataset paths in config",
+      "Enable GPU in notebook settings",
+      "Save checkpoints to /kaggle/working/",
+      "Download best checkpoint before session ends",
+      "Consider enabling WandB for monitoring"
+    ]
+  }
+}
