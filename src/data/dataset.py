@@ -12,12 +12,7 @@ from torchvision import transforms
 import re
 from sklearn.model_selection import train_test_split
 
-try:
-    from data.transforms import IrisAugmentation, create_boundary_mask
-except ImportError:
-    import sys
-    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-    from transforms import IrisAugmentation, create_boundary_mask
+from .transforms import IrisAugmentation, create_boundary_mask
 
 
 # FIXED: Support multiple image formats including TIFF

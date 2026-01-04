@@ -7,7 +7,6 @@
     "model_type": "enhanced",
     "num_labels": 2,
     "num_queries": 50,
-    "hidden_dim": 256,
     "add_boundary_head": true,
     "freeze_backbone": true,
     "freeze_epochs": 5,
@@ -25,8 +24,8 @@
     "preserve_aspect_ratio": true,
     "preserve_aspect": true,
     "num_workers": 2,
-    "pin_memory": true,
-    "batch_size": 8
+    "pin_memory": false,
+    "batch_size": 4
   },
   "training": {
     "num_epochs": 100,

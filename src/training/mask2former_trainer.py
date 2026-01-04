@@ -17,9 +17,9 @@ from typing import Dict, Any, Optional
 import numpy as np
 from pathlib import Path
 
-from models import create_model
-from losses import create_mask2former_loss  # FIXED: Correct import
-from evaluation.metrics import IrisSegmentationMetrics, AverageMeter
+from src.models import create_model
+from src.losses import create_mask2former_loss  
+from src.evaluation.metrics import IrisSegmentationMetrics, AverageMeter
 
 
 class Mask2FormerTrainer:
