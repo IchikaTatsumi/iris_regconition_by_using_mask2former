@@ -1,9 +1,11 @@
 {
-  "experiment_name": "mask2former_iris_ubirisv2",
-  "description": "Mask2Former with ResNet-50 for UBIRIS V2 iris segmentation",
+  "experiment_name": "mask2former_iris_ubirisv2_tiff",
+  "description": "Mask2Former for UBIRIS V2 iris segmentation with TIFF support",
   
   "model": {
-    "type": "mask2former",
+    "architecture": "mask2former",
+    "model_name": "facebook/mask2former-swin-small-coco-panoptic",
+    "model_type": "enhanced",
     "num_labels": 2,
     "num_queries": 50,
     "hidden_dim": 256,
@@ -15,48 +17,54 @@
   
   "data": {
     "dataset_dir": "dataset",
+    "dataset_root": "dataset",
     "images_dir": "dataset/images",
     "masks_dir": "dataset/masks",
     "image_size": 512,
     "train_val_split": 0.85,
     "subject_aware_split": true,
+    "use_subject_split": true,
     "preserve_aspect_ratio": true,
+    "preserve_aspect": true,
     "num_workers": 4,
-    "pin_memory": true
+    "pin_memory": true,
+    "batch_size": 4
   },
   
   "training": {
+    "num_epochs": 160,
     "epochs": 160,
     "batch_size": 4,
     "accumulation_steps": 2,
     "learning_rate": 5e-5,
+    "base_lr": 5e-5,
     "weight_decay": 0.01,
     "warmup_epochs": 5,
     "min_lr": 1e-7,
+    "patience": 20,
+    "save_frequency": 25,
+    "eval_freq": 1,
+    "evaluate_every": 1,
+    "log_freq": 100,
+    "gradient_clip": 1.0,
+    "mixed_precision": true,
+    "steps_per_epoch": 1000,
     
     "optimizer": {
       "type": "adamw",
+      "base_lr": 5e-5,
+      "learning_rate": 5e-5,
       "betas": [0.9, 0.999],
-      "eps": 1e-8
+      "eps": 1e-8,
+      "weight_decay": 0.01
     },
     
     "scheduler": {
       "type": "cosine",
       "warmup_steps": 500,
-      "min_lr_ratio": 0.01
-    },
-    
-    "loss": {
-      "ce_weight": 0.5,
-      "dice_weight": 0.5,
-      "boundary_weight": 0.25,
-      "mask2former_weight": 1.0,
-      "class_weights": [1.0, 15.0]
-    },
-    
-    "mixed_precision": {
-      "enabled": true,
-      "opt_level": "O1"
+      "min_lr_ratio": 0.01,
+      "min_lr": 1e-7,
+      "power": 0.9
     },
     
     "early_stopping": {
@@ -71,6 +79,36 @@
       "enabled": true,
       "max_norm": 1.0
     }
+  },
+  
+  "optimizer": {
+    "type": "adamw",
+    "base_lr": 5e-5,
+    "learning_rate": 5e-5,
+    "betas": [0.9, 0.999],
+    "eps": 1e-8,
+    "weight_decay": 0.01
+  },
+  
+  "scheduler": {
+    "type": "cosine",
+    "warmup_steps": 500,
+    "min_lr_ratio": 0.01,
+    "min_lr": 1e-7,
+    "power": 0.9
+  },
+  
+  "loss": {
+    "loss_type": "combined",
+    "ce_weight": 0.5,
+    "dice_weight": 0.5,
+    "boundary_weight": 0.25,
+    "mask2former_weight": 1.0,
+    "aux_weight": 0.2,
+    "use_focal": false,
+    "focal_alpha": null,
+    "focal_gamma": 2.0,
+    "class_weights": [1.0, 15.0]
   },
   
   "augmentation": {
@@ -124,7 +162,7 @@
   
   "checkpointing": {
     "save_dir": "outputs/mask2former_iris",
-    "save_frequency": 5,
+    "save_frequency": 25,
     "keep_best_n": 3,
     "keep_last_n": 2,
     "monitor_metric": "mean_iou",
@@ -135,7 +173,7 @@
     "use_wandb": true,
     "wandb_project": "iris-segmentation-mask2former",
     "wandb_entity": null,
-    "log_frequency": 50,
+    "log_frequency": 100,
     "log_images_frequency": 500,
     "log_gradients": false,
     "save_predictions_samples": 10
@@ -170,6 +208,14 @@
     "benchmark": true
   },
   
+  "num_classes": 2,
+  "class_names": ["background/pupil", "iris"],
+  "class_distribution": [0.93, 0.07],
+  "project_name": "iris-segmentation-mask2former",
+  "run_name": "mask2former-iris-ubirisv2-tiff",
+  "tags": ["mask2former", "iris", "segmentation", "ubiris", "tiff"],
+  "output_dir": "outputs/mask2former_iris",
+  
   "targets": {
     "mean_iou": 0.90,
     "mean_dice": 0.93,
@@ -179,16 +225,28 @@
   },
   
   "notes": {
-    "description": "Configuration optimized for RTX 3050 (4GB VRAM)",
-    "dataset": "UBIRIS V2 - 2250 images",
-    "model_info": "Mask2Former with ResNet-50 backbone",
+    "description": "Optimized configuration for Mask2Former on UBIRIS V2 TIFF dataset",
+    "dataset": "UBIRIS V2 - 2250 images (TIFF format)",
+    "model_info": "Mask2Former with Swin-Small backbone",
     "memory_usage": "~3.5GB VRAM with batch_size=4, mixed precision",
-    "expected_training_time": "~4-6 hours on RTX 3050",
+    "expected_training_time": "~8-10 hours on P100/T4 GPU",
+    "kaggle_optimized": true,
     "recommendations": [
-      "Use batch_size=2 if OOM errors occur",
-      "Disable boundary_head if memory is tight",
-      "Reduce num_queries to 30 for faster training",
-      "Use gradient_checkpointing for larger batches"
+      "Calculate actual class_weights before training using class_weights_util.py",
+      "Use batch_size=4 for 16GB VRAM GPUs (P100/T4)",
+      "Enable mixed precision for faster training",
+      "Monitor for NaN loss - reduce learning rate if occurs",
+      "Use early stopping with patience=20 to prevent overfitting",
+      "For Kaggle: reduce epochs to 120 to fit 12-hour limit"
+    ],
+    "tiff_support": "Dataset uses TIFF format - PIL handles this automatically",
+    "fixed_issues": [
+      "Added num_classes at top level",
+      "Added base_lr to training section",
+      "Added steps_per_epoch for scheduler",
+      "Added loss_type to loss section",
+      "Added project_name, run_name, tags for WandB",
+      "Duplicated optimizer/scheduler config for compatibility"
     ]
   }
 }

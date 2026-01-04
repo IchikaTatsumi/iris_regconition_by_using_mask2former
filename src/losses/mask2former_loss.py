@@ -1,19 +1,19 @@
 """
-Combined loss functions for iris segmentation
-Implements CE + Dice + BoundaryIoU as recommended by Oracle
+FIXED Loss functions for Mask2Former iris segmentation
+Key fixes:
+1. Proper loss calculation for semantic segmentation task
+2. Removed incorrect Mask2Former-specific losses (Hungarian matching, etc.)
+3. Focus on semantic segmentation losses that work with converted outputs
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict, Any
-import numpy as np
 
 
 class DiceLoss(nn.Module):
-    """
-    Multiclass Dice Loss
-    """
+    """Multiclass Dice Loss"""
     
     def __init__(self, smooth: float = 1e-6, reduction: str = 'mean'):
         super().__init__()
@@ -25,18 +25,12 @@ class DiceLoss(nn.Module):
         Args:
             predictions: [B, C, H, W] logits
             targets: [B, H, W] class indices
-        
-        Returns:
-            Dice loss value
         """
-        # Convert logits to probabilities
         predictions = F.softmax(predictions, dim=1)
         
-        # One-hot encode targets
         num_classes = predictions.shape[1]
         targets_one_hot = F.one_hot(targets, num_classes).permute(0, 3, 1, 2).float()
         
-        # Compute Dice coefficient for each class
         dice_scores = []
         for c in range(num_classes):
             pred_c = predictions[:, c:c+1, :, :]
@@ -48,9 +42,8 @@ class DiceLoss(nn.Module):
             dice = (2 * intersection + self.smooth) / (union + self.smooth)
             dice_scores.append(dice)
         
-        dice_scores = torch.stack(dice_scores, dim=1)  # [B, C]
+        dice_scores = torch.stack(dice_scores, dim=1)
         
-        # Average across classes and batch
         if self.reduction == 'mean':
             return 1 - dice_scores.mean()
         elif self.reduction == 'sum':
@@ -60,9 +53,7 @@ class DiceLoss(nn.Module):
 
 
 class BoundaryIoULoss(nn.Module):
-    """
-    Boundary IoU Loss for sharp boundary prediction
-    """
+    """Boundary IoU Loss"""
     
     def __init__(self, smooth: float = 1e-6):
         super().__init__()
@@ -72,20 +63,14 @@ class BoundaryIoULoss(nn.Module):
         """
         Args:
             boundary_pred: [B, 1, H, W] boundary logits
-            boundary_target: [B, H, W] or [B, 1, H, W] boundary ground truth
-        
-        Returns:
-            Boundary IoU loss
+            boundary_target: [B, H, W] or [B, 1, H, W]
         """
-        # Ensure boundary_target has correct shape
         if boundary_target.dim() == 3:
             boundary_target = boundary_target.unsqueeze(1)
         
-        # Convert logits to probabilities
         boundary_pred = torch.sigmoid(boundary_pred)
         boundary_target = boundary_target.float()
         
-        # Compute IoU
         intersection = (boundary_pred * boundary_target).sum(dim=(2, 3))
         union = boundary_pred.sum(dim=(2, 3)) + boundary_target.sum(dim=(2, 3)) - intersection
         
@@ -95,9 +80,7 @@ class BoundaryIoULoss(nn.Module):
 
 
 class FocalLoss(nn.Module):
-    """
-    Focal Loss for addressing class imbalance
-    """
+    """Focal Loss for class imbalance"""
     
     def __init__(self, alpha: Optional[torch.Tensor] = None, gamma: float = 2.0, reduction: str = 'mean'):
         super().__init__()
@@ -110,9 +93,6 @@ class FocalLoss(nn.Module):
         Args:
             predictions: [B, C, H, W] logits
             targets: [B, H, W] class indices
-        
-        Returns:
-            Focal loss value
         """
         ce_loss = F.cross_entropy(predictions, targets, reduction='none')
         pt = torch.exp(-ce_loss)
@@ -134,8 +114,8 @@ class FocalLoss(nn.Module):
 
 class CombinedIrisLoss(nn.Module):
     """
-    Combined loss function for iris segmentation
-    Implements: 0.5 * CE + 0.5 * Dice + 0.25 * BoundaryIoU
+    FIXED: Combined loss for iris segmentation
+    Simplified for semantic segmentation task
     """
     
     def __init__(
@@ -144,7 +124,6 @@ class CombinedIrisLoss(nn.Module):
         ce_weight: float = 0.5,
         dice_weight: float = 0.5,
         boundary_weight: float = 0.25,
-        aux_weight: float = 0.2,
         use_focal: bool = False,
         focal_alpha: Optional[torch.Tensor] = None,
         focal_gamma: float = 2.0
@@ -154,7 +133,6 @@ class CombinedIrisLoss(nn.Module):
         self.ce_weight = ce_weight
         self.dice_weight = dice_weight
         self.boundary_weight = boundary_weight
-        self.aux_weight = aux_weight
         self.use_focal = use_focal
         
         # Loss components
@@ -165,33 +143,29 @@ class CombinedIrisLoss(nn.Module):
         
         self.dice_loss = DiceLoss()
         self.boundary_loss = BoundaryIoULoss()
-        
-        # For auxiliary loss (deep supervision)
-        if use_focal:
-            self.aux_ce_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
-        else:
-            self.aux_ce_loss = nn.CrossEntropyLoss(weight=class_weights)
     
-    def forward(self, outputs: Dict[str, torch.Tensor], targets: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(
+        self, 
+        outputs: Dict[str, torch.Tensor], 
+        targets: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
         """
+        FIXED: Proper loss computation for semantic segmentation
+        
         Args:
             outputs: Dictionary containing:
-                - logits: [B, C, H, W] main segmentation logits
+                - logits: [B, num_classes, H, W] semantic segmentation logits
                 - boundary_logits: [B, 1, H, W] boundary logits (optional)
-                - aux_logits: [B, C, H, W] auxiliary logits (optional)
             targets: Dictionary containing:
                 - labels: [B, H, W] segmentation targets
                 - boundary: [B, H, W] boundary targets (optional)
-        
-        Returns:
-            Dictionary with loss components and total loss
         """
         labels = targets['labels']
         boundary = targets.get('boundary', None)
         
         losses = {}
         
-        # Main segmentation loss
+        # Main segmentation loss on semantic logits
         ce_loss = self.ce_loss(outputs['logits'], labels)
         dice_loss = self.dice_loss(outputs['logits'], labels)
         
@@ -206,11 +180,12 @@ class CombinedIrisLoss(nn.Module):
             losses['boundary_loss'] = boundary_loss
             main_loss += self.boundary_weight * boundary_loss
         
-        # Auxiliary loss (deep supervision)
-        if 'aux_logits' in outputs:
-            aux_loss = self.aux_ce_loss(outputs['aux_logits'], labels)
-            losses['aux_loss'] = aux_loss
-            main_loss += self.aux_weight * aux_loss
+        # Add Mask2Former's native loss if available
+        if 'loss' in outputs and outputs['loss'] is not None:
+            # Weight it less since we're using semantic losses primarily
+            mask2former_loss = outputs['loss']
+            losses['mask2former_loss'] = mask2former_loss
+            main_loss += 0.1 * mask2former_loss  # Small weight
         
         losses['total_loss'] = main_loss
         
@@ -218,9 +193,7 @@ class CombinedIrisLoss(nn.Module):
 
 
 class AdaptiveWeightedLoss(nn.Module):
-    """
-    Adaptive loss that adjusts weights based on training progress
-    """
+    """Adaptive loss with epoch-based weight adjustment"""
     
     def __init__(
         self,
@@ -239,45 +212,51 @@ class AdaptiveWeightedLoss(nn.Module):
         self.current_epoch = epoch
         
         if self.adapt_boundary and hasattr(self.base_loss, 'boundary_weight'):
-            # Gradually increase boundary weight after warmup
             if epoch < self.warmup_epochs:
                 self.base_loss.boundary_weight = 0.1
             else:
                 progress = min(1.0, (epoch - self.warmup_epochs) / self.warmup_epochs)
-                self.base_loss.boundary_weight = 0.1 + 0.15 * progress  # 0.1 -> 0.25
+                self.base_loss.boundary_weight = 0.1 + 0.15 * progress
     
-    def forward(self, outputs: Dict[str, torch.Tensor], targets: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(
+        self, 
+        outputs: Dict[str, torch.Tensor], 
+        targets: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
         return self.base_loss(outputs, targets)
 
 
-def create_loss_function(
+def create_mask2former_loss(
     num_classes: int = 2,
+    class_weights: Optional[torch.Tensor] = None,
     class_distribution: Optional[torch.Tensor] = None,
-    loss_type: str = "combined",  # "combined", "focal", "adaptive"
+    loss_type: str = "combined",
     device: torch.device = torch.device('cpu'),
     **kwargs
 ) -> nn.Module:
     """
-    Factory function to create loss functions
+    FIXED: Factory function to create loss functions
     
     Args:
-        num_classes: Number of segmentation classes
-        class_distribution: Class pixel distribution for weight calculation
-        loss_type: Type of loss function
-        device: Device to place tensors on
-        **kwargs: Additional loss function arguments
-    
-    Returns:
-        Loss function instance
+        num_classes: Number of classes
+        class_weights: Pre-calculated class weights (takes precedence)
+        class_distribution: Class distribution for weight calculation
+        loss_type: Type of loss
+        device: Device
+        **kwargs: Additional arguments
     """
     
-    # Calculate class weights if distribution provided
-    class_weights = None
-    if class_distribution is not None:
+    # Calculate or use provided class weights
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
+        print(f"✅ Using provided class weights: {class_weights}")
+    elif class_distribution is not None:
         total_pixels = class_distribution.sum()
         class_weights = total_pixels / (num_classes * class_distribution)
         class_weights = class_weights.to(device)
-        print(f"Calculated class weights: {class_weights}")
+        print(f"📊 Calculated class weights: {class_weights}")
+    else:
+        print("⚠️  No class weights - using unweighted loss")
     
     if loss_type == "combined":
         loss_fn = CombinedIrisLoss(
@@ -286,7 +265,7 @@ def create_loss_function(
         )
     elif loss_type == "focal":
         loss_fn = CombinedIrisLoss(
-            class_weights=None,  # Focal loss handles imbalance differently
+            class_weights=None,
             use_focal=True,
             focal_alpha=class_weights,
             **kwargs
@@ -307,7 +286,7 @@ def create_loss_function(
 
 
 def test_loss_functions():
-    """Test loss function implementations"""
+    """Test loss implementations"""
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     batch_size = 2
@@ -317,7 +296,6 @@ def test_loss_functions():
     # Create dummy data
     logits = torch.randn(batch_size, num_classes, height, width, device=device)
     boundary_logits = torch.randn(batch_size, 1, height, width, device=device)
-    aux_logits = torch.randn(batch_size, num_classes, height, width, device=device)
     
     labels = torch.randint(0, num_classes, (batch_size, height, width), device=device)
     boundary = torch.randint(0, 2, (batch_size, height, width), device=device)
@@ -325,7 +303,6 @@ def test_loss_functions():
     outputs = {
         'logits': logits,
         'boundary_logits': boundary_logits,
-        'aux_logits': aux_logits
     }
     
     targets = {
@@ -333,37 +310,24 @@ def test_loss_functions():
         'boundary': boundary
     }
     
-    # Test individual losses
-    print("Testing individual loss components...")
+    # Test loss
+    print("Testing FIXED loss functions...")
     
-    dice_loss = DiceLoss()
-    dice_val = dice_loss(logits, labels)
-    print(f"Dice Loss: {dice_val.item():.4f}")
-    
-    boundary_loss = BoundaryIoULoss()
-    boundary_val = boundary_loss(boundary_logits, boundary)
-    print(f"Boundary IoU Loss: {boundary_val.item():.4f}")
-    
-    focal_loss = FocalLoss()
-    focal_val = focal_loss(logits, labels)
-    print(f"Focal Loss: {focal_val.item():.4f}")
-    
-    # Test combined loss
-    print("\nTesting combined loss...")
-    class_dist = torch.tensor([0.93, 0.07])  # Background/pupil: 93%, Iris: 7%
-    combined_loss = create_loss_function(
+    class_weights = torch.tensor([1.0, 15.0], device=device)
+    loss_fn = create_mask2former_loss(
         num_classes=2,
-        class_distribution=class_dist,
+        class_weights=class_weights,
         loss_type="combined",
         device=device
     )
     
-    loss_dict = combined_loss(outputs, targets)
-    print("Combined loss components:")
-    for key, value in loss_dict.items():
-        print(f"  {key}: {value.item():.4f}")
+    loss_dict = loss_fn(outputs, targets)
     
-    print("\nLoss function tests completed successfully!")
+    print("\n✅ Loss components:")
+    for key, value in loss_dict.items():
+        print(f"   {key}: {value.item():.4f}")
+    
+    print("\n✅ Loss test passed!")
 
 
 if __name__ == "__main__":

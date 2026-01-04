@@ -1,13 +1,13 @@
 """
 Model components for iris segmentation
+FIXED: Correct imports from mask2former module
 """
 
-from .mask2former import EnhancedSegFormer, DeepSupervisionSegFormer, create_model
+from .mask2former import EnhancedMask2Former, create_model
 from .heads import BoundaryRefinementHead
 
 __all__ = [
-    'EnhancedSegFormer',
-    'DeepSupervisionSegFormer', 
+    'EnhancedMask2Former',
     'BoundaryRefinementHead',
     'create_model'
 ]

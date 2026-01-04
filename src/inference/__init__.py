@@ -1,15 +1,15 @@
 """
-Inference module for iris segmentation using trained SegFormer models
+FIXED: Inference module with correct class names
 """
 
 from .mask2former_inference import (
-    IrisSegmentationInference,
+    Mask2FormerInference,  # FIXED: Correct class name
     load_inference_model,
     quick_inference
 )
 
 __all__ = [
-    'IrisSegmentationInference',
-    'load_inference_model', 
+    'Mask2FormerInference',  # FIXED: Not IrisSegmentationInference
+    'load_inference_model',
     'quick_inference'
 ]

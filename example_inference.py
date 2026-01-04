@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-Example script showing how to use the iris segmentation inference module
+FIXED Example script showing how to use the iris segmentation inference module
+Key fixes:
+1. Import Mask2FormerInference (correct class name)
+2. Support both Mask2Former and SegFormer checkpoints
+3. Better error handling and user feedback
 """
 
 import sys
@@ -10,43 +14,69 @@ from pathlib import Path
 # Add src to Python path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from inference import IrisSegmentationInference, quick_inference
+from src.inference import Mask2FormerInference  # FIXED: Correct class name
 import torch
 
 
 def example_single_inference():
-    """Example of running inference on a single image"""
+    """FIXED: Example of running inference on a single image"""
     
-    # Path to your trained model checkpoint
-    checkpoint_path = "outputs/segformer_iris_a100/checkpoints/best.pt"
+    print("="*60)
+    print("SINGLE IMAGE INFERENCE EXAMPLE")
+    print("="*60)
     
-    if not os.path.exists(checkpoint_path):
-        print(f"❌ Checkpoint not found at {checkpoint_path}")
-        print("Please ensure you have trained the model and the checkpoint exists.")
+    # Try to find available checkpoints
+    possible_checkpoints = [
+        "outputs/mask2former_iris/checkpoints/best.pt",  # Mask2Former
+        "outputs/segformer_iris_a100/checkpoints/best.pt",  # SegFormer (fallback)
+        "outputs/segformer_iris/checkpoints/best.pt",  # SegFormer alternative
+    ]
+    
+    checkpoint_path = None
+    for path in possible_checkpoints:
+        if os.path.exists(path):
+            checkpoint_path = path
+            print(f"✅ Found checkpoint: {checkpoint_path}")
+            break
+    
+    if not checkpoint_path:
+        print(f"❌ No checkpoint found. Tried:")
+        for path in possible_checkpoints:
+            print(f"   - {path}")
+        print("\nPlease ensure you have trained the model first.")
         return
     
-    # Find a sample image from the dataset
-    sample_images = list(Path("dataset/images").glob("*.png"))[:3] if Path("dataset/images").exists() else []
+    # Find sample images
+    sample_images = []
+    if Path("dataset/images").exists():
+        sample_images = list(Path("dataset/images").glob("*.png"))[:3]
     
     if not sample_images:
         print("❌ No sample images found in dataset/images/")
-        print("Please ensure your dataset is available or provide an image path.")
+        print("Please ensure your dataset is available.")
         return
     
-    print(f"🔍 Running inference on {len(sample_images)} sample images...")
+    print(f"📸 Found {len(sample_images)} sample images")
+    print("="*60 + "\n")
     
     # Load the inference model
-    model = IrisSegmentationInference(checkpoint_path)
+    print("⏳ Loading model...")
+    try:
+        model = Mask2FormerInference(checkpoint_path)
+        print("✅ Model loaded successfully\n")
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
+        return
     
     # Process each sample image
     for i, image_path in enumerate(sample_images):
-        print(f"\n📸 Processing: {image_path.name}")
+        print(f"📸 Processing {i+1}/{len(sample_images)}: {image_path.name}")
         
         try:
             # Run inference
             results = model.predict(image_path)
             
-            # Print some statistics
+            # Print statistics
             seg_mask = results['segmentation']['mask']
             iris_coverage = (seg_mask == 1).sum() / seg_mask.size * 100
             avg_confidence = results['segmentation']['confidence'].mean()
@@ -65,98 +95,173 @@ def example_single_inference():
             model.save_prediction(
                 results,
                 output_dir / f"result_{i+1}_{image_path.stem}",
-                save_components=True
+                original_image=image_path,
+                save_components=True,
+                save_overlay=True,
+                save_comparison=True
             )
+            print(f"   ✅ Saved results\n")
             
         except Exception as e:
-            print(f"   ❌ Error processing {image_path.name}: {e}")
+            print(f"   ❌ Error: {e}\n")
     
-    print(f"\n✅ Inference completed! Results saved to inference_results/")
+    print("="*60)
+    print("✅ Single image inference completed!")
+    print(f"📁 Results saved to: inference_results/")
+    print("="*60 + "\n")
 
 
 def example_batch_inference():
-    """Example of running batch inference"""
+    """FIXED: Example of running batch inference"""
     
-    checkpoint_path = "outputs/segformer_iris_a100/checkpoints/best.pt"
+    print("="*60)
+    print("BATCH INFERENCE EXAMPLE")
+    print("="*60)
     
-    if not os.path.exists(checkpoint_path):
-        print(f"❌ Checkpoint not found at {checkpoint_path}")
+    # Try to find checkpoint
+    possible_checkpoints = [
+        "outputs/mask2former_iris/checkpoints/best.pt",
+        "outputs/segformer_iris_a100/checkpoints/best.pt",
+        "outputs/segformer_iris/checkpoints/best.pt",
+    ]
+    
+    checkpoint_path = None
+    for path in possible_checkpoints:
+        if os.path.exists(path):
+            checkpoint_path = path
+            print(f"✅ Found checkpoint: {checkpoint_path}")
+            break
+    
+    if not checkpoint_path:
+        print(f"❌ No checkpoint found")
         return
     
     # Get multiple images
-    sample_images = list(Path("dataset/images").glob("*.png"))[:5] if Path("dataset/images").exists() else []
+    sample_images = []
+    if Path("dataset/images").exists():
+        sample_images = list(Path("dataset/images").glob("*.png"))[:5]
     
     if len(sample_images) < 2:
-        print("❌ Need at least 2 images for batch inference example")
+        print("❌ Need at least 2 images for batch inference")
         return
     
-    print(f"🔍 Running batch inference on {len(sample_images)} images...")
+    print(f"📸 Processing {len(sample_images)} images")
+    print("="*60 + "\n")
     
     # Load model
-    model = IrisSegmentationInference(checkpoint_path)
+    print("⏳ Loading model...")
+    try:
+        model = Mask2FormerInference(checkpoint_path)
+        print("✅ Model loaded\n")
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
+        return
     
     # Run batch inference
-    results_list = model.predict_batch(sample_images)
+    print("🚀 Running batch inference...")
+    try:
+        results_list = model.predict_batch(sample_images)
+    except Exception as e:
+        print(f"❌ Batch inference failed: {e}")
+        return
     
     # Process results
-    for i, (image_path, results) in enumerate(zip(sample_images, results_list)):
+    print("\n📊 Results:")
+    for i, (image_path, results) in enumerate(zip(sample_images, results_list), 1):
         seg_mask = results['segmentation']['mask']
         iris_coverage = (seg_mask == 1).sum() / seg_mask.size * 100
-        print(f"   📸 {image_path.name}: {iris_coverage:.1f}% iris coverage")
+        print(f"   {i}. {image_path.name}: {iris_coverage:.1f}% iris coverage")
     
-    print("✅ Batch inference completed!")
+    print("\n✅ Batch inference completed!")
+    print("="*60 + "\n")
 
 
 def example_quick_inference():
-    """Example using the quick inference function"""
+    """FIXED: Example using quick inference"""
     
-    checkpoint_path = "outputs/segformer_iris_a100/checkpoints/best.pt"
+    print("="*60)
+    print("QUICK INFERENCE EXAMPLE")
+    print("="*60)
     
-    if not os.path.exists(checkpoint_path):
-        print(f"❌ Checkpoint not found at {checkpoint_path}")
+    # Try to find checkpoint
+    possible_checkpoints = [
+        "outputs/mask2former_iris/checkpoints/best.pt",
+        "outputs/segformer_iris_a100/checkpoints/best.pt",
+        "outputs/segformer_iris/checkpoints/best.pt",
+    ]
+    
+    checkpoint_path = None
+    for path in possible_checkpoints:
+        if os.path.exists(path):
+            checkpoint_path = path
+            print(f"✅ Found checkpoint: {checkpoint_path}")
+            break
+    
+    if not checkpoint_path:
+        print(f"❌ No checkpoint found")
         return
     
     # Find one sample image
-    sample_images = list(Path("dataset/images").glob("*.png"))[:1] if Path("dataset/images").exists() else []
+    sample_images = []
+    if Path("dataset/images").exists():
+        sample_images = list(Path("dataset/images").glob("*.png"))[:1]
     
     if not sample_images:
         print("❌ No sample images found")
         return
     
     image_path = sample_images[0]
-    output_path = "quick_inference_result.png"
+    print(f"📸 Image: {image_path.name}")
+    print("="*60 + "\n")
     
-    print(f"🚀 Running quick inference on {image_path.name}...")
+    print("🚀 Running quick inference...")
     
     try:
-        # Run quick inference with visualization
-        results = quick_inference(
-            image_path=str(image_path),
-            checkpoint_path=checkpoint_path,
-            output_path="quick_inference_results",
-            show_result=False  # Set to True to display results
+        # Load model and predict
+        model = Mask2FormerInference(checkpoint_path)
+        results = model.predict(image_path)
+        
+        # Save with visualization
+        output_dir = Path("quick_inference_results")
+        output_dir.mkdir(exist_ok=True)
+        
+        model.save_prediction(
+            results,
+            output_dir / "quick_result",
+            original_image=image_path,
+            save_overlay=True,
+            save_comparison=True,
+            save_components=True
         )
         
         seg_mask = results['segmentation']['mask']
         iris_coverage = (seg_mask == 1).sum() / seg_mask.size * 100
-        print(f"✅ Quick inference completed! Iris coverage: {iris_coverage:.1f}%")
+        
+        print(f"✅ Quick inference completed!")
+        print(f"📊 Iris coverage: {iris_coverage:.1f}%")
+        print(f"📁 Results saved to: quick_inference_results/")
         
     except Exception as e:
         print(f"❌ Quick inference failed: {e}")
+    
+    print("="*60 + "\n")
 
 
 def main():
     """Main function with menu"""
     
-    print("🔬 Iris Segmentation Inference Examples")
-    print("=" * 50)
+    print("\n" + "="*60)
+    print("🔬 IRIS SEGMENTATION INFERENCE EXAMPLES")
+    print("="*60)
     print("1. Single image inference")
     print("2. Batch inference") 
     print("3. Quick inference")
     print("4. Run all examples")
+    print("="*60)
     
     try:
         choice = input("\nSelect an option (1-4): ").strip()
+        print()
         
         if choice == "1":
             example_single_inference()
@@ -165,34 +270,53 @@ def main():
         elif choice == "3":
             example_quick_inference()
         elif choice == "4":
-            print("\n🔄 Running all examples...")
+            print("🔄 Running all examples...\n")
             example_single_inference()
-            print("\n" + "="*50)
             example_batch_inference()
-            print("\n" + "="*50)
             example_quick_inference()
         else:
             print("❌ Invalid choice")
             
     except KeyboardInterrupt:
-        print("\n⚠️ Interrupted by user")
+        print("\n\n⚠️ Interrupted by user")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
-    # Check if we have the required checkpoint
-    checkpoint_path = "outputs/segformer_iris_a100/checkpoints/best.pt"
+    # Check for available checkpoints
+    possible_checkpoints = [
+        "outputs/mask2former_iris/checkpoints/best.pt",
+        "outputs/segformer_iris_a100/checkpoints/best.pt",
+        "outputs/segformer_iris/checkpoints/best.pt",
+    ]
     
-    print(f"🔍 Checking for trained model at: {checkpoint_path}")
+    print("\n" + "="*60)
+    print("🔍 CHECKING FOR TRAINED MODELS")
+    print("="*60)
     
-    if os.path.exists(checkpoint_path):
-        print("✅ Model checkpoint found!")
+    found_checkpoints = []
+    for checkpoint_path in possible_checkpoints:
+        if os.path.exists(checkpoint_path):
+            found_checkpoints.append(checkpoint_path)
+            print(f"✅ Found: {checkpoint_path}")
+        else:
+            print(f"❌ Not found: {checkpoint_path}")
+    
+    print("="*60)
+    
+    if found_checkpoints:
+        print(f"\n✅ Found {len(found_checkpoints)} trained model(s)")
+        print(f"📋 Will use: {found_checkpoints[0]}")
         main()
     else:
-        print("❌ Model checkpoint not found!")
-        print(f"Expected location: {checkpoint_path}")
+        print("\n❌ No trained models found!")
         print("\nTo use this script:")
-        print("1. Make sure you have trained the model")
-        print("2. Verify the checkpoint path is correct")
-        print("3. Update the checkpoint_path variable if needed")
+        print("1. Train a model using train_mask2former.py")
+        print("2. Ensure the checkpoint file exists")
+        print("3. Run this script again")
+        print("\nExpected checkpoint locations:")
+        for path in possible_checkpoints:
+            print(f"  - {path}")
