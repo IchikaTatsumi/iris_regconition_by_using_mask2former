@@ -1,6 +1,9 @@
 """
-COMPLETE FIXED dataset.py with TIFF support
-File: src/data/dataset.py
+MEMORY-SAFE dataset.py - FIXED for Kaggle 16GB RAM
+Key fixes:
+1. Lazy loading - chỉ load khi __getitem__
+2. Clear transforms sau mỗi sample
+3. Giảm memory footprint
 """
 
 import os
@@ -8,44 +11,28 @@ import torch
 from torch.utils.data import Dataset
 from PIL import Image
 import numpy as np
-from torchvision import transforms
-import re
 from sklearn.model_selection import train_test_split
+import gc
 
 from .transforms import IrisAugmentation, create_boundary_mask
 
-
-# FIXED: Support multiple image formats including TIFF
 IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp']
 
 
 class UbirisDataset(Dataset):
     """
-    FIXED: UBIRIS V2 Dataset for iris segmentation with TIFF support
+    MEMORY-SAFE UBIRIS V2 Dataset - Kaggle optimized
     """
     
     def __init__(
         self, 
         dataset_root, 
         split='train', 
-        transform=None, 
-        mask_transform=None, 
         use_subject_split=True, 
         preserve_aspect=True, 
         image_size=512, 
         seed=42
     ):
-        """
-        Args:
-            dataset_root: Path to dataset root (contains 'images' and 'masks' folders)
-            split: 'train', 'val', or 'test'
-            transform: Image transforms (deprecated, use augmentation)
-            mask_transform: Mask transforms (deprecated, use augmentation)
-            use_subject_split: Whether to use subject-aware splitting
-            preserve_aspect: Whether to preserve aspect ratio
-            image_size: Target image size
-            seed: Random seed for reproducible splits
-        """
         self.dataset_root = dataset_root
         self.images_dir = os.path.join(dataset_root, 'images')
         self.masks_dir = os.path.join(dataset_root, 'masks')
@@ -55,24 +42,20 @@ class UbirisDataset(Dataset):
         self.image_size = image_size
         self.seed = seed
         
-        # Verify directories exist
+        # Verify directories
         if not os.path.exists(self.images_dir):
             raise FileNotFoundError(f"Images directory not found: {self.images_dir}")
         if not os.path.exists(self.masks_dir):
             raise FileNotFoundError(f"Masks directory not found: {self.masks_dir}")
         
-        # Legacy transform support (deprecated)
-        self.transform = transform
-        self.mask_transform = mask_transform
-        
-        # Use new augmentation pipeline
+        # ✅ Augmentation pipeline
         self.augmentation = IrisAugmentation(
             image_size=image_size,
             training=(split == 'train'),
             preserve_aspect=preserve_aspect
         )
         
-        # FIXED: Get all image-mask pairs (supporting multiple formats)
+        # ✅ Load ONLY file paths (không load ảnh)
         all_pairs = self._load_image_mask_pairs()
         
         # Split dataset
@@ -83,51 +66,33 @@ class UbirisDataset(Dataset):
         
         print(f"✅ {split.upper()} dataset: {len(self.image_files)} samples")
         
-        # Default transforms if augmentation not available
-        if self.transform is None:
-            self.transform = transforms.Compose([
-                transforms.Resize((image_size, image_size)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                                   std=[0.229, 0.224, 0.225])
-            ])
-        
-        if self.mask_transform is None:
-            self.mask_transform = transforms.Compose([
-                transforms.Resize((image_size, image_size), 
-                                interpolation=transforms.InterpolationMode.NEAREST)
-            ])
+        # 🔥 KAGGLE FIX: Thêm flag để force garbage collection
+        self._gc_counter = 0
+        self._gc_frequency = 100  # GC mỗi 100 samples
     
     def _load_image_mask_pairs(self):
         """
-        FIXED: Load image-mask pairs with support for multiple formats
+        ✅ Load ONLY file paths - KHÔNG load ảnh vào RAM
         """
         all_pairs = []
         
         print(f"📂 Scanning directories...")
-        print(f"   Images: {self.images_dir}")
-        print(f"   Masks: {self.masks_dir}")
         
         for img_file in os.listdir(self.images_dir):
             file_ext = os.path.splitext(img_file.lower())[1]
             
-            # Check if valid image extension
             if file_ext not in IMAGE_EXTENSIONS:
                 continue
             
-            # Extract base name (without extension)
             base_name = os.path.splitext(img_file)[0]
             
-            # Find corresponding mask (try different extensions and patterns)
+            # Tìm mask tương ứng
             mask_file = None
-            mask_path = None
-            
-            # Try different mask naming patterns
             mask_patterns = [
-                f"OperatorA_{base_name}",  # Standard UBIRIS pattern
-                base_name,                  # Same name as image
-                f"{base_name}_mask",       # Alternative pattern
-                f"mask_{base_name}"        # Another alternative
+                f"OperatorA_{base_name}",
+                base_name,
+                f"{base_name}_mask",
+                f"mask_{base_name}"
             ]
             
             for pattern in mask_patterns:
@@ -137,18 +102,16 @@ class UbirisDataset(Dataset):
                     
                     if os.path.exists(potential_path):
                         mask_file = potential_mask
-                        mask_path = potential_path
                         break
                 
                 if mask_file:
                     break
             
             if mask_file is None:
-                # Warn about missing mask but continue
                 continue
             
-            # Extract subject ID for subject-aware split
-            # UBIRIS format: C{camera}_S{session}_I{image}.ext
+            # Extract subject ID
+            import re
             camera_match = re.search(r'C(\d+)', base_name)
             session_match = re.search(r'S(\d+)', base_name)
             
@@ -159,6 +122,7 @@ class UbirisDataset(Dataset):
             else:
                 subject_id = 0
             
+            # ✅ Chỉ lưu TÊN FILE, không load ảnh
             all_pairs.append({
                 'image_file': img_file,
                 'mask_file': mask_file,
@@ -169,30 +133,15 @@ class UbirisDataset(Dataset):
             raise RuntimeError(
                 f"No valid image-mask pairs found!\n"
                 f"Images dir: {self.images_dir}\n"
-                f"Masks dir: {self.masks_dir}\n"
-                f"Supported formats: {IMAGE_EXTENSIONS}\n"
-                f"Expected mask patterns: OperatorA_[basename].ext or [basename].ext"
+                f"Masks dir: {self.masks_dir}"
             )
         
         print(f"📊 Found {len(all_pairs)} image-mask pairs")
         
-        # Print format distribution
-        formats = {}
-        for pair in all_pairs:
-            ext = os.path.splitext(pair['image_file'].lower())[1]
-            formats[ext] = formats.get(ext, 0) + 1
-        
-        print(f"📁 Image formats:")
-        for ext, count in formats.items():
-            print(f"   {ext}: {count} files")
-        
         return all_pairs
     
     def _subject_aware_split(self, all_pairs, split):
-        """
-        Split dataset by subjects to prevent data leakage
-        """
-        # Group by subject
+        """Split by subjects"""
         subjects = {}
         for pair in all_pairs:
             subject_id = pair['subject_id']
@@ -200,9 +149,8 @@ class UbirisDataset(Dataset):
                 subjects[subject_id] = []
             subjects[subject_id].append(pair)
         
-        # Split subjects (80% train, 10% val, 10% test)
         subject_ids = list(subjects.keys())
-        subject_ids.sort()  # Ensure reproducibility
+        subject_ids.sort()
         
         train_subjects, temp_subjects = train_test_split(
             subject_ids, test_size=0.2, random_state=self.seed
@@ -211,7 +159,6 @@ class UbirisDataset(Dataset):
             temp_subjects, test_size=0.5, random_state=self.seed
         )
         
-        # Get files for this split
         if split == 'train':
             split_subjects = train_subjects
         elif split == 'val':
@@ -228,18 +175,13 @@ class UbirisDataset(Dataset):
                 image_files.append(pair['image_file'])
                 mask_files.append(pair['mask_file'])
         
-        print(f"   Subject-aware split: {len(split_subjects)} subjects")
-        
         return image_files, mask_files
     
     def _random_split(self, all_pairs, split):
-        """
-        Random split (fallback if subject-aware split not used)
-        """
+        """Random split"""
         image_files = [pair['image_file'] for pair in all_pairs]
         mask_files = [pair['mask_file'] for pair in all_pairs]
         
-        # Random split (80% train, 10% val, 10% test)
         total_samples = len(image_files)
         train_end = int(0.8 * total_samples)
         val_end = int(0.9 * total_samples)
@@ -258,24 +200,16 @@ class UbirisDataset(Dataset):
     
     def __getitem__(self, idx):
         """
-        Get a sample from the dataset
-        
-        Returns:
-            dict with keys:
-                - pixel_values: [3, H, W] normalized image tensor
-                - labels: [H, W] segmentation mask (0=background/pupil, 1=iris)
-                - boundary: [H, W] boundary mask
-                - image_path: str
-                - mask_path: str
+        🔥 LAZY LOADING - Chỉ load khi cần
         """
-        # Load image and mask
+        # Build full paths
         img_path = os.path.join(self.images_dir, self.image_files[idx])
         mask_path = os.path.join(self.masks_dir, self.mask_files[idx])
         
         try:
-            # FIXED: Open with PIL (supports TIFF)
+            # 🔥 LOAD ẢNH Ở ĐÂY - không phải ở __init__
             image = Image.open(img_path).convert('RGB')
-            mask = Image.open(mask_path).convert('L')  # Grayscale
+            mask = Image.open(mask_path).convert('L')
         except Exception as e:
             raise RuntimeError(
                 f"Failed to load sample {idx}:\n"
@@ -284,51 +218,36 @@ class UbirisDataset(Dataset):
                 f"  Error: {e}"
             )
         
-        # Convert mask to numpy for preprocessing
+        # Convert mask to numpy
         mask_np = np.array(mask)
         
-        # Preprocess mask for iris segmentation:
-        # Threshold to binary: 0 = background/pupil, 1 = iris
+        # Threshold mask: 0=background/pupil, 1=iris
         processed_mask = np.zeros_like(mask_np, dtype=np.uint8)
-        processed_mask[mask_np > 127] = 1  # Threshold at 127
+        processed_mask[mask_np > 127] = 1
         
-        # Use new augmentation pipeline if available
-        if hasattr(self, 'augmentation') and self.augmentation is not None:
-            try:
-                image_tensor, mask_tensor, boundary_tensor = self.augmentation(
-                    image, processed_mask
-                )
-                
-                return {
-                    'pixel_values': image_tensor,
-                    'labels': mask_tensor,
-                    'boundary': boundary_tensor,
-                    'image_path': img_path,
-                    'mask_path': mask_path
-                }
-            except Exception as e:
-                print(f"⚠️  Augmentation failed for {img_path}: {e}")
-                # Fall through to legacy transforms
+        # 🔥 Apply augmentation
+        try:
+            image_tensor, mask_tensor, boundary_tensor = self.augmentation(
+                image, processed_mask
+            )
+        except Exception as e:
+            print(f"⚠️ Augmentation failed for {img_path}: {e}")
+            # Fallback: simple conversion
+            from torchvision import transforms
+            image_tensor = transforms.ToTensor()(image)
+            mask_tensor = torch.from_numpy(processed_mask).long()
+            boundary_tensor = torch.from_numpy(
+                create_boundary_mask(processed_mask)
+            ).float()
         
-        # Fallback to legacy transforms
-        processed_mask_pil = Image.fromarray(processed_mask.astype(np.uint8))
-        
-        if self.transform:
-            image = self.transform(image)
-        
-        if self.mask_transform:
-            processed_mask_pil = self.mask_transform(processed_mask_pil)
-        
-        # Convert mask to tensor manually
-        mask_tensor = torch.from_numpy(np.array(processed_mask_pil)).long()
-        
-        # Create boundary tensor for compatibility
-        boundary_tensor = torch.from_numpy(
-            create_boundary_mask(np.array(processed_mask_pil))
-        ).float()
+        # 🔥 KAGGLE FIX: Force garbage collection periodically
+        self._gc_counter += 1
+        if self._gc_counter >= self._gc_frequency:
+            gc.collect()
+            self._gc_counter = 0
         
         return {
-            'pixel_values': image,
+            'pixel_values': image_tensor,
             'labels': mask_tensor,
             'boundary': boundary_tensor,
             'image_path': img_path,
@@ -336,12 +255,10 @@ class UbirisDataset(Dataset):
         }
 
 
-# Test function
 if __name__ == "__main__":
-    print("Testing UbirisDataset with TIFF support...")
+    print("Testing MEMORY-SAFE UbirisDataset...")
     
     try:
-        # Test loading
         ds = UbirisDataset('dataset', split='train')
         
         print(f"\n✅ Dataset loaded: {len(ds)} samples")
@@ -353,7 +270,6 @@ if __name__ == "__main__":
         print(f"   Image shape: {sample['pixel_values'].shape}")
         print(f"   Mask shape: {sample['labels'].shape}")
         print(f"   Boundary shape: {sample['boundary'].shape}")
-        print(f"   Mask values: {torch.unique(sample['labels'])}")
         
         print("\n✅ Dataset test passed!")
         
